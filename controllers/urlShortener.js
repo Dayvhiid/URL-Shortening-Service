@@ -1,5 +1,20 @@
 import crypto from 'crypto';
 import URL from '../models/URL.js';
+import redis from 'redis';
+
+const client = redis.createClient({
+    password: 'qxiqx7yih3awpBw7mMrwXq28o2MJAVJy',
+    socket: {
+        host: 'redis-15610.c10.us-east-1-4.ec2.redns.redis-cloud.com',
+        port: 15610
+    }
+});
+
+client.on('error', (err) => { console.log("Cache Error", err)});
+client.on('connect', () => {console.log("Redis Succesfully connected")});
+
+await client.connect();
+
 
 const urlshortener = async (req,res) => {
     const { url } = req.body;
@@ -14,6 +29,7 @@ const urlshortener = async (req,res) => {
     });
 
     await newUrl.save();
+    await client.set(shortUrl, url, 'EX', 180); // Cache the URL for 3 minutes
     return res.json(
         { message: "Shortened succesfully", url: shortUrl }
     )
@@ -21,6 +37,11 @@ const urlshortener = async (req,res) => {
 
 const getOriginalUrl = async (req, res) => {
     const { shortUrl } = req.params;
+    //cache check
+    const cachedData = await client.get(shortUrl);
+    if (cachedData) {
+        return res.json({ originalUrl: cachedData, message: "Retrieved from cache" });
+    }
     const urlEntry = await URL.findOne({ shortUrl: shortUrl });
     if (!urlEntry) {
         return res.status(404).json({ error: 'URL not found' });
